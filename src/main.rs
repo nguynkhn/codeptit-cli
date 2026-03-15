@@ -7,11 +7,9 @@ fn main() -> anyhow::Result<()> {
     let api = codeptit::api::Api::new(&config)?;
     let cli = <cli::Cli as clap::Parser>::parse();
 
-    let mut builder = tabled::builder::Builder::new();
-
     match cli.command {
         cli::Command::Login => {
-            let access_token = codeptit::auth::login(api)?;
+            let access_token = codeptit::auth::login(&api)?;
             config.access_token = Some(access_token);
             config.save()?;
 
@@ -19,7 +17,7 @@ fn main() -> anyhow::Result<()> {
         }
 
         cli::Command::Course { id } => {
-            let courses = codeptit::course::fetch(api)?;
+            let courses = codeptit::course::fetch(&api)?;
             match id {
                 Some(id) => {
                     let course = courses
@@ -35,28 +33,8 @@ fn main() -> anyhow::Result<()> {
                         course.id, course.subject.code, course.subject.name
                     );
                 }
-                None => {
-                    builder.push_record(["ID", "Subject", "Semester"]);
-
-                    for course in courses {
-                        builder.push_record([
-                            format!(
-                                "{}{}",
-                                course.id.to_string(),
-                                config
-                                    .course_id
-                                    .is_some_and(|id| course.id == id)
-                                    .then_some("*")
-                                    .unwrap_or_default()
-                            ),
-                            format!("{} - {}", course.subject.code, course.subject.name),
-                            course.semester.name,
-                        ]);
-                    }
-
-                    let mut table = builder.build();
-                    table.with(tabled::settings::Style::rounded());
-                    println!("{table}");
+                _ => {
+                    todo!();
                 }
             };
         }
@@ -92,9 +70,25 @@ fn main() -> anyhow::Result<()> {
 
             let submission =
                 crate::codeptit::submit::Submissison::new(course_id, question_code, language, code);
-            let submission_id = crate::codeptit::submit::send(api, submission)?;
+            let submission_id = crate::codeptit::submit::send(&api, submission)?;
 
             println!("Submission sent with ID {submission_id}");
+
+            let status =
+                (0..=config.max_retries).find_map(|_| {
+                    match crate::codeptit::submit::status(&api, submission_id) {
+                        Ok(status) => Some(status),
+                        _ => {
+                            std::thread::sleep(config.retry_interval);
+                            None
+                        }
+                    }
+                });
+
+            match status {
+                Some(_) => todo!(),
+                _ => eprintln!("Max retries exceeded"),
+            }
         }
     };
     Ok(())

@@ -9,7 +9,7 @@ struct LoginResponse {
     access_token: String,
 }
 
-pub fn login(api: crate::codeptit::api::Api) -> anyhow::Result<String> {
+pub fn login(api: &crate::codeptit::api::Api) -> anyhow::Result<String> {
     let username = std::env::var("CODEPTIT_USERNAME").or_else(|_| -> anyhow::Result<String> {
         let mut username = String::new();
 

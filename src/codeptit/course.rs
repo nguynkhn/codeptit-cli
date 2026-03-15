@@ -21,7 +21,7 @@ struct CourseResponse {
     data: Vec<Course>,
 }
 
-pub fn fetch(api: crate::codeptit::api::Api) -> anyhow::Result<Vec<Course>> {
+pub fn fetch(api: &crate::codeptit::api::Api) -> anyhow::Result<Vec<Course>> {
     let response: CourseResponse = api
         .request(reqwest::Method::GET, "/courses/studying")
         .send()?

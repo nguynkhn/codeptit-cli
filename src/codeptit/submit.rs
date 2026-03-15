@@ -37,9 +37,45 @@ impl Submissison {
 }
 
 #[derive(serde::Deserialize)]
-pub struct SubmissionResponse {
+pub struct SubmissionSendResponse {
     #[serde(rename = "solution_id")]
     submission_id: u32,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub enum SubmissionVerdict {
+    #[serde(rename = "AC")]
+    Accepted,
+    #[serde(rename = "WA")]
+    WrongAnswer,
+    #[serde(rename = "TLE")]
+    TimeLimitExceeded,
+    #[serde(rename = "MLE")]
+    MemoryLimitExceeded,
+    #[serde(rename = "RE")]
+    RuntimeError,
+    #[serde(rename = "CE")]
+    CompilationError,
+}
+
+#[serde_with::serde_as]
+#[derive(Debug, serde::Deserialize)]
+pub struct SubmissionStatus {
+    #[serde(rename = "result")]
+    pub verdict: SubmissionVerdict,
+    #[serde(rename = "run_time")]
+    #[serde_as(as = "serde_with::DurationMilliSecondsWithFrac<f64>")]
+    pub runtime_ms: std::time::Duration,
+    #[serde(rename = "memory")]
+    pub memory_kb: u32,
+    #[serde(rename = "correct_test")]
+    pub passed_test: u32,
+    pub total_test: u32,
+}
+
+#[derive(serde::Deserialize)]
+pub struct SubmissionStatusResponse {
+    data: SubmissionStatus,
 }
 
 pub fn language(path: &std::path::PathBuf) -> Option<Language> {
@@ -88,13 +124,13 @@ pub fn question_code(language: &Language, code: &SubmissionCode) -> anyhow::Resu
         .strip_prefix(line_comment)
         .or_else(|| {
             line.strip_prefix(block_comment_start)
-                .and(line.strip_suffix(block_comment_end))
+                .and_then(|line| line.strip_suffix(block_comment_end))
         })
         .map(|line| line.trim().to_owned())
         .or(fallback))
 }
 
-pub fn send(api: crate::codeptit::api::Api, submission: Submissison) -> anyhow::Result<u32> {
+pub fn send(api: &crate::codeptit::api::Api, submission: Submissison) -> anyhow::Result<u32> {
     let form = reqwest::blocking::multipart::Form::new()
         .text("course_id", submission.course_id.to_string())
         .text("question", submission.question_code)
@@ -104,11 +140,23 @@ pub fn send(api: crate::codeptit::api::Api, submission: Submissison) -> anyhow::
         SubmissionCode::Source(source) => form.text("source_code", source),
     };
 
-    let response: SubmissionResponse = api
+    let response: SubmissionSendResponse = api
         .request(reqwest::Method::POST, "/solutions")
         .multipart(form)
         .send()?
         .json()?;
 
     Ok(response.submission_id)
+}
+
+pub fn status(
+    api: &crate::codeptit::api::Api,
+    submission_id: u32,
+) -> anyhow::Result<SubmissionStatus> {
+    let response: SubmissionStatusResponse = api
+        .request(reqwest::Method::GET, &format!("/solutions/{submission_id}"))
+        .send()?
+        .json()?;
+
+    Ok(response.data)
 }
