@@ -7,6 +7,8 @@ fn main() -> anyhow::Result<()> {
     let api = codeptit::api::Api::new(&config)?;
     let cli = <cli::Cli as clap::Parser>::parse();
 
+    let mut builder = tabled::builder::Builder::new();
+
     match cli.command {
         cli::Command::Login => {
             let access_token = codeptit::auth::login(api)?;
@@ -15,10 +17,16 @@ fn main() -> anyhow::Result<()> {
 
             println!("Login successfully");
         }
+
         cli::Command::Course { id } => {
             let courses = codeptit::course::fetch(api)?;
-            if let Some(id) = id {
-                if let Some(course) = courses.into_iter().find(|course| course.id == id) {
+            match id {
+                Some(id) => {
+                    let course = courses
+                        .into_iter()
+                        .find(|course| course.id == id)
+                        .expect(&format!("No course with ID {id} found"));
+
                     config.course_id = Some(course.id);
                     config.save()?;
 
@@ -26,33 +34,67 @@ fn main() -> anyhow::Result<()> {
                         "Course ID {}: {} - {} selected",
                         course.id, course.subject.code, course.subject.name
                     );
-                } else {
-                    eprintln!("No course with ID {id} found");
                 }
+                None => {
+                    builder.push_record(["ID", "Subject", "Semester"]);
+
+                    for course in courses {
+                        builder.push_record([
+                            format!(
+                                "{}{}",
+                                course.id.to_string(),
+                                config
+                                    .course_id
+                                    .is_some_and(|id| course.id == id)
+                                    .then_some("*")
+                                    .unwrap_or_default()
+                            ),
+                            format!("{} - {}", course.subject.code, course.subject.name),
+                            course.semester.name,
+                        ]);
+                    }
+
+                    let mut table = builder.build();
+                    table.with(tabled::settings::Style::rounded());
+                    println!("{table}");
+                }
+            };
+        }
+
+        cli::Command::Submit {
+            course_id,
+            question_code,
+            language,
+            file,
+            stdin,
+        } => {
+            let course_id = course_id.or(config.course_id).expect("No course selected");
+            let (language, code) = if stdin {
+                let mut buffer = Vec::new();
+                let stdin = std::io::stdin();
+                let mut handle = stdin.lock();
+
+                std::io::Read::read_to_end(&mut handle, &mut buffer)?;
+
+                let source = String::from_utf8(buffer)?;
+                (
+                    language.unwrap(),
+                    codeptit::submit::SubmissionCode::Source(source),
+                )
             } else {
-                let mut builder = tabled::builder::Builder::new();
-                builder.push_record(["ID", "Subject", "Semester"]);
+                let file = file.expect("No file specified");
+                let language = codeptit::submit::language(&file).expect("Not supported language");
+                (language, codeptit::submit::SubmissionCode::File(file))
+            };
+            let question_code = crate::codeptit::submit::question_code(&language, &code)?
+                .or(question_code)
+                .expect("No question code specified");
 
-                for course in courses {
-                    builder.push_record([
-                        format!(
-                            "{}{}",
-                            course.id.to_string(),
-                            config
-                                .course_id
-                                .is_some_and(|id| course.id == id)
-                                .then_some("*")
-                                .unwrap_or_default()
-                        ),
-                        format!("{} - {}", course.subject.code, course.subject.name),
-                        course.semester.name,
-                    ]);
-                }
+            let submission =
+                crate::codeptit::submit::Submissison::new(course_id, question_code, language, code);
+            let submission_id = crate::codeptit::submit::send(api, submission)?;
 
-                let mut table = builder.build();
-                table.with(tabled::settings::Style::rounded());
-                println!("{table}");
-            }
+            println!("Submission sent with ID {submission_id}");
         }
     };
     Ok(())

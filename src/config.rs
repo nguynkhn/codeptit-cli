@@ -26,18 +26,22 @@ impl Default for Config {
 impl Config {
     pub fn path() -> std::path::PathBuf {
         dirs::config_dir()
-            .unwrap()
+            .expect("Not supported")
             .join("codeptit-cli")
             .join("config.toml")
     }
 
     pub fn load() -> anyhow::Result<Self> {
-        if let Ok(content) = std::fs::read_to_string(Self::path()) {
-            let config = toml::from_str(&content)?;
-            return Ok(config);
+        match std::fs::read_to_string(Self::path()) {
+            Ok(content) => {
+                let config = toml::from_str(&content)?;
+                Ok(config)
+            }
+            Err(error) => match error.kind() {
+                std::io::ErrorKind::NotFound => Ok(Default::default()),
+                _ => Err(error.into()),
+            },
         }
-
-        Ok(Default::default())
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
