@@ -18,7 +18,10 @@ pub struct Args {
 #[derive(clap::Subcommand)]
 pub enum Command {
     /// Login to CodePTIT
-    Login,
+    Login {
+        #[arg(long, default_value_t)]
+        logout: bool,
+    },
     /// Select a course
     Course {
         course_id: Option<crate::codeptit::api::ApiId>,
