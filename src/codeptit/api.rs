@@ -1,26 +1,16 @@
-pub struct Api {
+pub type ApiId = u32;
+
+pub struct Api<'a> {
     client: reqwest::blocking::Client,
+    config: &'a crate::config::Config,
 }
 
-impl Api {
-    pub fn new(config: &crate::config::Config) -> anyhow::Result<Self> {
-        let mut builder = reqwest::blocking::Client::builder()
-            .timeout(config.timeout);
-
-        if let Some(access_token) = config.access_token.as_deref() {
-            let bearer = format!("Bearer {access_token}");
-
-            let mut headers = reqwest::header::HeaderMap::new();
-            let mut value = reqwest::header::HeaderValue::from_str(&bearer)?;
-            value.set_sensitive(true);
-            headers.insert(reqwest::header::AUTHORIZATION, value);
-
-            builder = builder.default_headers(headers);
+impl<'a> Api<'a> {
+    pub fn new(config: &'a crate::config::Config) -> Self {
+        Self {
+            config,
+            client: Default::default(),
         }
-
-        let client = builder.build()?;
-
-        Ok(Self { client })
     }
 
     pub fn request(
@@ -28,7 +18,41 @@ impl Api {
         method: reqwest::Method,
         endpoint: &str,
     ) -> reqwest::blocking::RequestBuilder {
-        let url = format!("https://code.ptit.edu.vn/api{endpoint}");
-        self.client.request(method, url)
+        let url = format!("{}{endpoint}", crate::codeptit::API_URL);
+        let request = self
+            .client
+            .request(method, url)
+            .timeout(self.config.timeout);
+
+        if let Some(access_token) = &self.config.access_token {
+            return request.bearer_auth(access_token);
+        }
+
+        request
+    }
+
+    pub fn request_poll<F, T>(
+        &self,
+        method: reqwest::Method,
+        endpoint: &str,
+        callback: F,
+    ) -> anyhow::Result<T>
+    where
+        F: Fn(reqwest::blocking::RequestBuilder) -> anyhow::Result<T>,
+    {
+        let mut last_err = None;
+
+        for _ in 0..=self.config.max_retries {
+            let request = self.request(method.clone(), endpoint);
+
+            match callback(request) {
+                Ok(response) => return Ok(response),
+                Err(err) => last_err = Some(err),
+            }
+
+            std::thread::sleep(self.config.poll_interval);
+        }
+
+        Err(last_err.unwrap_or(anyhow::anyhow!("Max retries exceeded")))
     }
 }

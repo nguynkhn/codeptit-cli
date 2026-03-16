@@ -1,31 +1,34 @@
-#[derive(serde::Deserialize)]
-pub struct Semester {
-    pub name: String,
-}
+// #[derive(serde::Deserialize)]
+// pub struct CourseSemester {
+//     pub name: String,
+// }
 
 #[derive(serde::Deserialize)]
-pub struct Subject {
+pub struct CourseSubject {
     pub code: String,
     pub name: String,
 }
 
 #[derive(serde::Deserialize)]
 pub struct Course {
-    pub id: u32,
-    pub semester: Semester,
-    pub subject: Subject,
+    pub id: crate::codeptit::api::ApiId,
+    // pub semester: CourseSemester,
+    pub subject: CourseSubject,
 }
 
 #[derive(serde::Deserialize)]
-struct CourseResponse {
-    data: Vec<Course>,
+pub struct CourseResponse {
+    #[serde(rename = "data")]
+    pub courses: Vec<Course>,
 }
 
-pub fn fetch(api: &crate::codeptit::api::Api) -> anyhow::Result<Vec<Course>> {
-    let response: CourseResponse = api
-        .request(reqwest::Method::GET, "/courses/studying")
-        .send()?
-        .json()?;
+impl<'a> crate::codeptit::api::Api<'a> {
+    pub fn courses(&self) -> anyhow::Result<CourseResponse> {
+        let response: CourseResponse = self
+            .request(reqwest::Method::GET, "/courses/studying")
+            .send()?
+            .json()?;
 
-    Ok(response.data)
+        Ok(response)
+    }
 }
