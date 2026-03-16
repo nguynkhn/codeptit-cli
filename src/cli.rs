@@ -21,7 +21,6 @@ pub enum Command {
     Login,
     /// Select a course
     Course {
-        #[arg(short = 'i', long = "id")]
         course_id: Option<crate::codeptit::api::ApiId>,
     },
     // Problem,
